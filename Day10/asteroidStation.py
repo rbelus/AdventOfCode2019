@@ -86,7 +86,7 @@ def FillAsteroidsDirection(station, asteroids):
         angle = angle
         asteroidDirections.append((angle, distance, asteroid))
     
-    return sorted(asteroidDirections)
+    return (sorted(asteroidDirections))
         
 
 def DeathRay(station, asteroids):
@@ -98,22 +98,34 @@ def DeathRay(station, asteroids):
     # Adding DeathRay in there
     deathRayAngle = (-acos(0), 0)
     deathRayIndex = next(i for i in range(len(asteroidDirections)) if asteroidDirections[i][0] > deathRayAngle[0])
-    asteroidDirections.insert(deathRayIndex, deathRayAngle)
+    asteroidDirections.insert(deathRayIndex, (deathRayAngle, "                                                  "))
     
     # Make it turn !
     count = 0
+    print(asteroidDirections)
     while len(asteroidDirections) > 1:
         # Compute next to destroy.
-        if deathRayIndex > 0:
+        if deathRayIndex < len(asteroidDirections) - 1:
             # We still have not made a complete turn, destroy the next.
             deathRayAngle = (asteroidDirections[deathRayIndex - 1][0], 0)
             oldDeathRay = deathRayIndex
+            futureDeathRayAngle = (asteroidDirections[deathRayIndex + 1][0], 0)
             deathRayIndex = next(i for i in range(0, deathRayIndex) if round(asteroidDirections[i][0],5) == round(deathRayAngle[0],5))
             count += 1
             element = asteroidDirections.pop(deathRayIndex)
             asteroidDirections.pop(oldDeathRay-1)
             print("Deleting : ", element, "at : ", count)
-            asteroidDirections.insert(deathRayIndex, deathRayAngle)
+
+            if deathRayIndex == len(asteroidDirections) - 1:
+                # Make a turn.
+                print("Making a turn")
+                element = asteroidDirections.pop(len(asteroidDirections) - 1)
+                asteroidDirections.insert(0, deathRayAngle)
+                deathRayIndex = next(i for i in range(0, deathRayIndex) if round(asteroidDirections[i][0],5) < round(deathRayAngle[0],5))
+            else:
+                # Moving the death ray
+                deathRayIndex = next(i for i in range(0, len(asteroidDirections)) if round(asteroidDirections[i][0],5) > round(futureDeathRayAngle[0],5))
+                asteroidDirections.insert(deathRayIndex, futureDeathRayAngle)
         else:
             # Make a turn.
             print("Making a turn")
@@ -126,7 +138,7 @@ def DeathRay(station, asteroids):
 width, height = RetrieveWidthHeight(open("input", "r"))
 annotatedMap, asteroids = AnnotateMap(open("input", "r"), width, height)
 
-print(annotatedMap, asteroids, len(asteroids))
+#print(annotatedMap, asteroids, len(asteroids))
 
 #maxAsteroid = 0
 #bestAsteroid = (0,0)
@@ -146,8 +158,8 @@ print(annotatedMap, asteroids, len(asteroids))
 
 #print("Best is :", bestAsteroid, "with asteroids visibles : ", maxAsteroid)
 
-#station = (22, 25)
-station = (11, 13)
+station = (22, 25)
+#station = (11, 13)
 asteroids.pop(asteroids.index(station))
 
 DeathRay(station, asteroids)
