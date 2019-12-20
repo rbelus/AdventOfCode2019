@@ -1,15 +1,10 @@
 import multiprocessing as mp
 import numpy as np
+import keyboard
+import time
+import sys
 
-HEAD = 0
-intcode = []
-inputFile = open("input", "r")
-line = inputFile.readline()
-intcode = line.split(',')
-inputValue = 0
-outputValue = 0
-stopProgram = False
-continueFeedBackLoop = False
+score = 0
 
 class IntCodeProgram:
 	intcode = []
@@ -34,6 +29,7 @@ class IntCodeProgram:
 		self.inputValue = 0
 		self.pid = id
 		self.relativeBase = 0
+		self.intcode[0] = '2'
 
 	def SetInputValue(self, val):
 		self.inputValue = val
@@ -51,8 +47,9 @@ class IntCodeProgram:
 		#print("Multiply : ", valueToAdd1, valueToAdd2, " result in : ", outputAddress)
 
 	def Input(self, args, inputArg):
+		# Notify we wait for input !
 		self.intcode[args[0]] = str(inputArg)
-		#print("Input : ", inputArg, " in ", self.intcode[args[0]], self.headPosition, self.relativeBase)
+		#print("Input : ", inputArg)
 
 	def Output(self,args):
 		#print(self.pid, "OUTPUT : ", self.intcode[args[0]])
@@ -94,6 +91,7 @@ class IntCodeProgram:
 		#print("Base is now : ", self.relativeBase)
 
 	def Terminate(self,args):
+		print("YOU LOSE")
 		self.shouldStop = True
 
 	def ProcessModesAndInstruction(self):
@@ -179,6 +177,7 @@ class IntCodeProgram:
 					function(toCall, self.phaseSetting)
 					self.didSetPhase = True
 				else:
+					self.outputConnection.send(255)
 					toInput = self.inputConnection.recv()
 					#print(self.pid, "Received : ", toInput)
 					function(toCall, toInput)
@@ -198,7 +197,7 @@ class IntCodeProgram:
 def RunProgram(program):
 	program.Run()
 
-def DrawFrame(listen, send):
+def DrawFrame(listen, previousFrame, oldXBarPos, oldXBallPos, oldYBallPos):
 	blocks = {
 		0 : ' ',
 		1 : 'H',
@@ -209,35 +208,47 @@ def DrawFrame(listen, send):
 	#send.send(1)
 	toDraw = {}
 	minX, maxX, minY, maxY = 0, 0, 0, 0
+	xBarPos = oldXBarPos
+	xBallPos, yBallPos = oldXBallPos, oldYBallPos
 
 	while True:
 		xPos = 0
 		try:
 			xPos = listen.recv()
+			if xPos == 255:
+				#print("END OF DRAW FRAME")
+				break
 		except:
 			break
 
 		yPos = 0
 		try:
 			yPos = listen.recv()
+			if yPos == 255:
+				#print("END OF DRAW FRAME")
+				break
 		except:
 			break
 		
 		blockType = 0
 		try:
 			blockType = listen.recv()
+			if blockType == 255:
+				#print("END OF DRAW FRAME")
+				break
 		except:
 			break
 
-		#Talk to the program
-		#if currentPos not in painted:
-		#	send.send(0)
-		#elif painted[currentPos] == 'Black':
-		#	send.send(0)
-		#elif painted[currentPos] == 'White':
-		#	send.send(1)
-
+		if xPos == -1 and yPos == 0:
+			global score
+			score = blockType
+			continue		
+		
 		toDraw[(xPos, yPos)] = blocks[blockType]
+		if blockType == 3:
+			xBarPos = xPos
+		if blockType == 4:
+			xBallPos, yBallPos = xPos, yPos
 
 		if xPos < minX:
 			minX = xPos
@@ -253,37 +264,88 @@ def DrawFrame(listen, send):
 	width = maxX - minX + 1
 	height = maxY - minY + 1
 
+	#print(toDraw)
 
-	image = [[' ' for x in range(width)] for y in range(height)]
+	if previousFrame is None:
+		image = [[' ' for x in range(width)] for y in range(height)]
+		# Paint the frame !
+		for y in range(height):
+			for x in range(width):
+				adjustedPos = (x, y)
+				if adjustedPos not in toDraw:
+					image[y][x] = ' '
+				else:
+					image[y][x] = toDraw[adjustedPos]
+	else:
+		image = previousFrame
+		for pixel in toDraw:
+			image[pixel[1]][pixel[0]] = toDraw[pixel]
 
-	# Paint now :
-	for y in range(height):
-		for x in range(width):
-			adjustedPos = (x, y)
-
-			if adjustedPos not in toDraw:
-				image[y][x] = ' '
-			else:
-				image[y][x] = toDraw[adjustedPos]
-
-	#print(image)
-	outputFile = open("output", "w")
+	# print frame
+	#outputFile = open("output", "w")
+	toPrint = ""
 	for line in image:
 		for char in line:
-			outputFile.write(char)
-		outputFile.write('\n')
+			toPrint += char
+		toPrint += '\n'
 
-	nbBlock = 0
-	for elem in toDraw:
-		if toDraw[elem] == '#':
-			nbBlock += 1
-	print("Good luck, there are ", nbBlock, " blocks !")
+	# write score
+	toPrint += '\n'
+	toPrint += '\n'
+	toPrint += '\n'
+	toPrint += "SCORE : " + str(score)
+	toPrint += '\n'
 
-		
-		
+	#sendFrame.send(toPrint)
+	print(toPrint, flush=True)
+	return image, xBarPos, xBallPos, yBallPos
+
+	#nbBlock = 0
+	#for elem in toDraw:
+	#	if toDraw[elem] == '#':
+	#		nbBlock += 1
+	#print("Good luck, there are ", nbBlock, " blocks !")
+
+def GameManager(listen, send):
+	# Main Game Loop
+	theFrame = None
+
+	oldXBarPos, oldXBallPos, oldYBallPos = 0, 0, 0
+	countSend = 0
+	first = True
+
+	# Draw Frame
+	theFrame, xBarPos, xBallPos, yBallPos = DrawFrame(listen, theFrame, oldXBarPos, oldXBallPos, oldYBallPos)
+	time.sleep(0.5)
+	sys.stdout.flush()
+	oldXBarPos = xBarPos
+	oldXBallPos = xBallPos
+	oldYBallPos = yBallPos
+	send.send(0)
+
+	while True:
+		time.sleep(0.01)
+
+		# Draw Frame
+		theFrame, xBarPos, xBallPos, yBallPos = DrawFrame(listen, theFrame, oldXBarPos, oldXBallPos, oldYBallPos)
+		sys.stdout.flush()
+
+		# Compute where to go
+		if xBallPos > xBarPos:
+			send.send(1)
+			#print("SENT 1 with BALL :", xBallPos, "BAR : ", xBarPos)
+		elif xBallPos < xBarPos:
+			send.send(-1)
+			#print("SENT -1")
+		else:
+			send.send(0)
+			#print("SENT 0")
+
+		oldXBarPos = xBarPos
+		oldXBallPos = xBallPos
+		oldYBallPos = yBallPos
 
 if __name__ == '__main__':
-	inputValue = outputValue
 	inputFile = open("input", "r")
 	line = inputFile.readline()
 	intcode = line.split(',')
@@ -293,19 +355,19 @@ if __name__ == '__main__':
 	#print(intcode)
 	#print("NEW PROGRAM", phaseSettings[i])
 
-	robotListen, programSend = mp.Pipe()
-	robotSend, programListen = mp.Pipe()
+	gameListen, programSend = mp.Pipe()
+	gameSend, programListen = mp.Pipe()
 
 	program = IntCodeProgram(intcode, 0, 0)
 	program.SetConnections(programListen, programSend)
 
 	programProcess = mp.Process(target=RunProgram, name="program", args=(program,))
-	drawProcess = mp.Process(target=DrawFrame, name="draw", args=(robotListen, robotSend))
+	gameProcess = mp.Process(target=GameManager, name="draw", args=(gameListen, gameSend))
 
+	gameProcess.start()
 	programProcess.start()
-	drawProcess.start()
 
 	programProcess.join()
 	programSend.close()
 	programListen.close()
-	drawProcess.join()
+	gameProcess.join()
